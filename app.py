@@ -203,10 +203,16 @@ if excel_file and docx_template and not st.session_state.procesado:
     # ===============================
     df = pd.read_excel(excel_file, dtype=str)
 
-    # Limpiar NaN
+    # Eliminar filas vacías
+    df = df.dropna(how="all")
+
+    # Resetear índice
+    df = df.reset_index(drop=True)
+
+    # Reemplazar NaN
     df = df.fillna("")
 
-    # Convertir TODO a texto + MAYÚSCULAS
+    # Convertir TODO a MAYÚSCULAS
     for col in df.columns:
         df[col] = df[col].astype(str).str.upper()
 
@@ -218,15 +224,21 @@ if excel_file and docx_template and not st.session_state.procesado:
     # ===============================
     st.markdown(f"""
     <div class="metric-row">
+
         <div class="metric-box">
             <div class="metric-num">{total}</div>
-            <div class="metric-label">Registros detectados</div>
+            <div class="metric-label">
+                Registros detectados
+            </div>
         </div>
 
         <div class="metric-box">
             <div class="metric-num">{cols_count}</div>
-            <div class="metric-label">Campos encontrados</div>
+            <div class="metric-label">
+                Campos encontrados
+            </div>
         </div>
+
     </div>
     """, unsafe_allow_html=True)
 
@@ -264,14 +276,18 @@ if excel_file and docx_template and not st.session_state.procesado:
     if st.button("⚙️ Procesar documentos", use_container_width=True):
 
         carpeta = "documentos_generados"
+
         os.makedirs(carpeta, exist_ok=True)
 
         progreso = st.progress(0)
+
         status = st.empty()
 
         contador = 0
 
-        # Guardar plantilla temporal
+        # ===============================
+        # GUARDAR PLANTILLA TEMPORAL
+        # ===============================
         template_path = "plantilla_temp.docx"
 
         with open(template_path, "wb") as f:
@@ -328,12 +344,14 @@ if excel_file and docx_template and not st.session_state.procesado:
                 )
 
             except Exception as e:
-                st.warning(f"Error en fila {i + 1}: {e}")
+                st.warning(
+                    f"Error en fila {i + 1}: {e}"
+                )
 
         status.empty()
 
         # ===============================
-        # CONVERTIR PDF
+        # CONVERTIR A PDF
         # ===============================
         pdf_generados = []
 
@@ -377,6 +395,7 @@ if excel_file and docx_template and not st.session_state.procesado:
                         pdf_generados.append(pdf_path)
 
                 except subprocess.CalledProcessError:
+
                     st.warning(
                         f"No se pudo convertir: "
                         f"{os.path.basename(docx_path)}"
@@ -397,6 +416,7 @@ if excel_file and docx_template and not st.session_state.procesado:
             ]:
 
                 for ruta in docx_generados:
+
                     zipf.write(
                         ruta,
                         os.path.basename(ruta)
@@ -408,6 +428,7 @@ if excel_file and docx_template and not st.session_state.procesado:
             ]:
 
                 for ruta in pdf_generados:
+
                     zipf.write(
                         ruta,
                         os.path.basename(ruta)
@@ -439,6 +460,12 @@ if (
         "Word (.docx)"
     )
 
+    pdf_total = (
+        st.session_state.pdf_count
+        if fmt != "Word (.docx)"
+        else "—"
+    )
+
     st.markdown(f"""
     <div class="metric-row">
 
@@ -453,11 +480,7 @@ if (
 
         <div class="metric-box">
             <div class="metric-num">
-                {
-                    st.session_state.pdf_count
-                    if fmt != "Word (.docx)"
-                    else "—"
-                }
+                {pdf_total}
             </div>
             <div class="metric-label">
                 Documentos PDF
@@ -475,7 +498,7 @@ if (
     """, unsafe_allow_html=True)
 
     # ===============================
-    # DESCARGA
+    # DESCARGA ZIP
     # ===============================
     st.download_button(
         label="📦 Descargar ZIP",
