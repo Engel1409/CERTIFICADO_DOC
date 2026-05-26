@@ -116,7 +116,7 @@ if excel_file and docx_template:
 
         if len(docx_generados) == 0 and len(pdf_generados) == 0:
             st.error("❌ No se generaron archivos")
-            shutil.rmtree(base_dir, ignore_errors=True)
+            st.success("✅ Proceso completado correctamente"
             st.stop()
 
         # ===============================
