@@ -70,7 +70,7 @@ if excel_file and docx_template and not st.session_state.procesado:
 
         for fila in df.to_dict("records"):
 
-            doc = template.clone()
+            doc = DocxTemplate(template_path)  # ✅ FIX
             doc.render(fila)
 
             nombre = f"{fila.get('nro','')}_{fila.get('contratante','')}_{fila.get('poliza','')}.docx"
