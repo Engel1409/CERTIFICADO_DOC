@@ -7,7 +7,6 @@ import shutil
 import uuid
 import time
 from docxtpl import DocxTemplate
-from io import BytesIO
 from datetime import datetime
 
 # ===============================
@@ -41,6 +40,9 @@ if excel_file and docx_template:
 
     if st.button("⚙️ Procesar documentos"):
 
+        # ===============================
+        # CARPETA ÚNICA
+        # ===============================
         base_dir = f"work_{uuid.uuid4().hex}"
         docx_dir = os.path.join(base_dir, "docx")
         pdf_dir = os.path.join(base_dir, "pdf")
@@ -81,7 +83,6 @@ if excel_file and docx_template:
 
             doc.save(ruta)
 
-            # ✅ VALIDACIÓN REAL
             if os.path.exists(ruta) and os.path.getsize(ruta) > 0:
                 docx_generados.append(ruta)
 
@@ -116,63 +117,63 @@ if excel_file and docx_template:
                     os.path.basename(docx_path).replace(".docx", ".pdf")
                 )
 
-                # ✅ VALIDACIÓN REAL
                 if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
                     pdf_generados.append(pdf_path)
                 else:
                     st.warning(f"PDF inválido: {os.path.basename(pdf_path)}")
 
         # ===============================
-        # VALIDACIÓN FINAL
+        # VALIDACIÓN
         # ===============================
         st.write("DOCX válidos:", len(docx_generados))
         st.write("PDF válidos:", len(pdf_generados))
 
         if len(docx_generados) == 0 and len(pdf_generados) == 0:
-            st.error("❌ No se generaron archivos válidos")
+            st.error("❌ No se generaron archivos")
             shutil.rmtree(base_dir, ignore_errors=True)
             st.stop()
 
         # ===============================
-        # ZIP DOCX
+        # ZIP DOCX (ARCHIVO FÍSICO ✅)
         # ===============================
         if formato in ["Word (.docx)", "Ambos (Word + PDF)"] and docx_generados:
 
-            zip_docx = BytesIO()
-            with zipfile.ZipFile(zip_docx, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            zip_path = os.path.join(base_dir, "docx.zip")
+
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
                 for f in docx_generados:
-                    with open(f, "rb") as file_data:
-                        z.writestr(os.path.basename(f), file_data.read())
+                    z.write(f, os.path.basename(f))
 
-            zip_docx.seek(0)
-
-            st.download_button(
-                "📄 Descargar DOCX",
-                zip_docx.getvalue(),
-                file_name=f"docx_{uuid.uuid4().hex}.zip",
-                mime="application/zip"
-            )
+            with open(zip_path, "rb") as f:
+                st.download_button(
+                    "📄 Descargar DOCX",
+                    f,
+                    file_name=f"docx_{uuid.uuid4().hex}.zip",
+                    mime="application/zip"
+                )
 
         # ===============================
-        # ZIP PDF
+        # ZIP PDF (ARCHIVO FÍSICO ✅)
         # ===============================
         if formato in ["PDF", "Ambos (Word + PDF)"] and pdf_generados:
 
-            zip_pdf = BytesIO()
-            with zipfile.ZipFile(zip_pdf, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            zip_path_pdf = os.path.join(base_dir, "pdf.zip")
+
+            with zipfile.ZipFile(zip_path_pdf, "w", compression=zipfile.ZIP_DEFLATED) as z:
                 for f in pdf_generados:
-                    with open(f, "rb") as file_data:
-                        z.writestr(os.path.basename(f), file_data.read())
+                    z.write(f, os.path.basename(f))
 
-            zip_pdf.seek(0)
+            with open(zip_path_pdf, "rb") as f:
+                st.download_button(
+                    "📑 Descargar PDF",
+                    f,
+                    file_name=f"pdf_{uuid.uuid4().hex}.zip",
+                    mime="application/zip"
+                )
 
-            st.download_button(
-                "📑 Descargar PDF",
-                zip_pdf.getvalue(),
-                file_name=f"pdf_{uuid.uuid4().hex}.zip",
-                mime="application/zip"
-            )
-
+        # ===============================
+        # LIMPIEZA
+        # ===============================
         shutil.rmtree(base_dir, ignore_errors=True)
 
         st.success("✅ Proceso completado correctamente")
