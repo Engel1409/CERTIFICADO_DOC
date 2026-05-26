@@ -57,7 +57,7 @@ if excel_file and docx_template and not st.session_state.procesado:
     if st.button("⚙️ Procesar documentos"):
 
         # ===============================
-        # CARPETA ÚNICA POR EJECUCIÓN 🔥
+        # CARPETA ÚNICA POR EJECUCIÓN
         # ===============================
         base_dir = f"work_{uuid.uuid4().hex}"
         docx_dir = os.path.join(base_dir, "docx")
@@ -67,7 +67,7 @@ if excel_file and docx_template and not st.session_state.procesado:
         os.makedirs(pdf_dir, exist_ok=True)
 
         # ===============================
-        # GUARDAR TEMPLATE
+        # TEMPLATE
         # ===============================
         template_path = os.path.join(base_dir, "plantilla.docx")
         with open(template_path, "wb") as f:
@@ -90,10 +90,12 @@ if excel_file and docx_template and not st.session_state.procesado:
             fila["fecha"] = fecha_texto
 
             doc = DocxTemplate(template_path)
-
             doc.render(fila)
 
-            nombre = f"{uuid.uuid4().hex}.docx"
+            nombre_base = f"{fila.get('nro','')}_{fila.get('asegurado','')}_{fila.get('poliza','')}"
+            nombre_base = nombre_base.replace("/", "_").replace("\\", "_")
+
+            nombre = f"{nombre_base}_{uuid.uuid4().hex[:6]}.docx"
             ruta = os.path.join(docx_dir, nombre)
 
             doc.save(ruta)
@@ -104,7 +106,7 @@ if excel_file and docx_template and not st.session_state.procesado:
                 st.warning(f"DOCX inválido: {nombre}")
 
         # ===============================
-        # CONVERTIR PDF (CONTROLADO)
+        # CONVERTIR PDF
         # ===============================
         pdf_generados = []
 
@@ -122,11 +124,10 @@ if excel_file and docx_template and not st.session_state.procesado:
                     check=True
                 )
 
-                # ✅ esperar que termine bien
-                time.sleep(1)
+                time.sleep(1)  # 🔥 clave estabilidad
 
             except Exception as e:
-                st.error(f"Error en conversión PDF: {e}")
+                st.error(f"Error PDF: {e}")
 
             for docx_path in docx_generados:
                 nombre_pdf = os.path.basename(docx_path).replace(".docx", ".pdf")
@@ -141,7 +142,7 @@ if excel_file and docx_template and not st.session_state.procesado:
         st.write("PDF:", len(pdf_generados))
 
         # ===============================
-        # CREAR ZIP (100% ESTABLE)
+        # CREAR ZIP (FIX DEFINITIVO)
         # ===============================
         zip_buffer = BytesIO()
         files_added = 0
@@ -169,15 +170,14 @@ if excel_file and docx_template and not st.session_state.procesado:
             shutil.rmtree(base_dir, ignore_errors=True)
             st.stop()
 
-        # ===============================
-        # GUARDAR EN SESSION
-        # ===============================
+        # ✅ 🔥 FIX CRÍTICO (ZIP SIEMPRE BIEN)
+        st.session_state.zip_buffer = zip_buffer.getvalue()
+
         st.session_state.procesado = True
-        st.session_state.zip_buffer = zip_buffer
         st.session_state.contador = len(docx_generados)
         st.session_state.pdf_count = len(pdf_generados)
 
-        # ✅ LIMPIEZA TOTAL (clave 🔥)
+        # ✅ limpieza total
         shutil.rmtree(base_dir, ignore_errors=True)
 
         st.rerun()
