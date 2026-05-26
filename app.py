@@ -4,7 +4,8 @@ import os
 import zipfile
 import subprocess
 import shutil
-import tempfile
+import uuid
+import time
 from docxtpl import DocxTemplate
 from io import BytesIO
 from datetime import datetime
@@ -13,7 +14,6 @@ from datetime import datetime
 # CONFIG
 # ===============================
 st.set_page_config(page_title="Generador de Certificados", layout="wide")
-
 st.title("📄 Generador de Certificados")
 
 # ===============================
@@ -56,33 +56,45 @@ if excel_file and docx_template and not st.session_state.procesado:
 
     if st.button("⚙️ Procesar documentos"):
 
-        carpeta = "certificados"
-        os.makedirs(carpeta, exist_ok=True)
+        # ===============================
+        # CARPETA ÚNICA POR EJECUCIÓN 🔥
+        # ===============================
+        base_dir = f"work_{uuid.uuid4().hex}"
+        docx_dir = os.path.join(base_dir, "docx")
+        pdf_dir = os.path.join(base_dir, "pdf")
 
-        template_path = "plantilla_temp.docx"
+        os.makedirs(docx_dir, exist_ok=True)
+        os.makedirs(pdf_dir, exist_ok=True)
+
+        # ===============================
+        # GUARDAR TEMPLATE
+        # ===============================
+        template_path = os.path.join(base_dir, "plantilla.docx")
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
 
-        # =====================================
-        # GENERAR DOCX (OPTIMIZADO)
-        # =====================================
-        docx_generados = []
-        
+        # ===============================
+        # FECHA
+        # ===============================
         hoy = datetime.now()
         fecha_texto = hoy.strftime("%d/%m/%Y")
 
-        template = DocxTemplate(template_path)
+        # ===============================
+        # GENERAR DOCX
+        # ===============================
+        docx_generados = []
 
         for fila in df.to_dict("records"):
 
-            doc = DocxTemplate(template_path)  # ✅ FIX
-            fila['fecha'] = fecha_texto
+            fila = {k.strip().lower(): v for k, v in fila.items()}
+            fila["fecha"] = fecha_texto
+
+            doc = DocxTemplate(template_path)
+
             doc.render(fila)
 
-            nombre = f"{fila.get('nro','')}_{fila.get('asegurado','')}_{fila.get('poliza','')}.docx"
-            nombre = nombre.replace("/", "_").replace("\\", "_")
-
-            ruta = os.path.join(carpeta, nombre)
+            nombre = f"{uuid.uuid4().hex}.docx"
+            ruta = os.path.join(docx_dir, nombre)
 
             doc.save(ruta)
 
@@ -91,14 +103,12 @@ if excel_file and docx_template and not st.session_state.procesado:
             else:
                 st.warning(f"DOCX inválido: {nombre}")
 
-        # =====================================
-        # CONVERTIR PDF EN LOTE 🔥
-        # =====================================
+        # ===============================
+        # CONVERTIR PDF (CONTROLADO)
+        # ===============================
         pdf_generados = []
 
         if formato in ["PDF", "Ambos (Word + PDF)"]:
-
-            output_dir = tempfile.gettempdir()
 
             try:
                 subprocess.run(
@@ -106,17 +116,21 @@ if excel_file and docx_template and not st.session_state.procesado:
                         "libreoffice",
                         "--headless",
                         "--convert-to", "pdf",
-                        "--outdir", output_dir,
+                        "--outdir", pdf_dir,
                         *docx_generados
                     ],
                     check=True
                 )
+
+                # ✅ esperar que termine bien
+                time.sleep(1)
+
             except Exception as e:
                 st.error(f"Error en conversión PDF: {e}")
 
             for docx_path in docx_generados:
                 nombre_pdf = os.path.basename(docx_path).replace(".docx", ".pdf")
-                pdf_path = os.path.join(output_dir, nombre_pdf)
+                pdf_path = os.path.join(pdf_dir, nombre_pdf)
 
                 if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
                     pdf_generados.append(pdf_path)
@@ -126,9 +140,9 @@ if excel_file and docx_template and not st.session_state.procesado:
         st.write("DOCX:", len(docx_generados))
         st.write("PDF:", len(pdf_generados))
 
-        # =====================================
-        # CREAR ZIP (ROBUSTO STREAMLIT)
-        # =====================================
+        # ===============================
+        # CREAR ZIP (100% ESTABLE)
+        # ===============================
         zip_buffer = BytesIO()
         files_added = 0
 
@@ -136,14 +150,14 @@ if excel_file and docx_template and not st.session_state.procesado:
 
             if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
                 for f in docx_generados:
-                    if os.path.exists(f) and os.path.getsize(f) > 0:
+                    if os.path.exists(f):
                         with open(f, "rb") as file_data:
                             zipf.writestr(os.path.basename(f), file_data.read())
                             files_added += 1
 
             if formato in ["PDF", "Ambos (Word + PDF)"]:
                 for f in pdf_generados:
-                    if os.path.exists(f) and os.path.getsize(f) > 0:
+                    if os.path.exists(f):
                         with open(f, "rb") as file_data:
                             zipf.writestr(os.path.basename(f), file_data.read())
                             files_added += 1
@@ -151,17 +165,20 @@ if excel_file and docx_template and not st.session_state.procesado:
         zip_buffer.seek(0)
 
         if files_added == 0:
-            st.error("❌ No se generaron archivos. ZIP vacío.")
+            st.error("❌ No se generaron archivos")
+            shutil.rmtree(base_dir, ignore_errors=True)
             st.stop()
 
-        # =====================================
+        # ===============================
         # GUARDAR EN SESSION
-        # =====================================
+        # ===============================
         st.session_state.procesado = True
         st.session_state.zip_buffer = zip_buffer
         st.session_state.contador = len(docx_generados)
         st.session_state.pdf_count = len(pdf_generados)
-        st.session_state.formato = formato
+
+        # ✅ LIMPIEZA TOTAL (clave 🔥)
+        shutil.rmtree(base_dir, ignore_errors=True)
 
         st.rerun()
 
@@ -172,8 +189,8 @@ if st.session_state.procesado and st.session_state.zip_buffer:
 
     st.success("✅ Archivos generados correctamente")
 
-    st.write(f"DOCX generados: {st.session_state.contador}")
-    st.write(f"PDF generados: {st.session_state.pdf_count}")
+    st.write(f"DOCX: {st.session_state.contador}")
+    st.write(f"PDF: {st.session_state.pdf_count}")
 
     st.download_button(
         label="📦 Descargar ZIP",
@@ -182,19 +199,9 @@ if st.session_state.procesado and st.session_state.zip_buffer:
         mime="application/zip"
     )
 
-    # =====================================
-    # LIMPIEZA
-    # =====================================
     if st.button("🧹 Nuevo proceso"):
-
         st.session_state.procesado = False
         st.session_state.zip_buffer = None
         st.session_state.contador = 0
         st.session_state.pdf_count = 0
-
-        shutil.rmtree("certificados", ignore_errors=True)
-
-        if os.path.exists("plantilla_temp.docx"):
-            os.remove("plantilla_temp.docx")
-
         st.rerun()
