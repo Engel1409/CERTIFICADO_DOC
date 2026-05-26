@@ -9,55 +9,11 @@ from docxtpl import DocxTemplate
 from io import BytesIO
 
 # ===============================
-# CONFIGURACIÓN
+# CONFIG
 # ===============================
-st.set_page_config(
-    page_title="Generador de Certificados",
-    layout="wide"
-)
+st.set_page_config(page_title="Generador de Certificados", layout="wide")
 
-# ===============================
-# ESTILOS
-# ===============================
-st.markdown("""
-<style>
-.metric-row {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 20px;
-}
-
-.metric-box {
-    background: white;
-    border: 1px solid #ddd;
-    border-top: 3px solid #2563EB;
-    border-radius: 6px;
-    padding: 18px;
-    flex: 1;
-    text-align: center;
-}
-
-.metric-num {
-    font-size: 32px;
-    font-weight: bold;
-    color: #2563EB;
-}
-
-.metric-label {
-    font-size: 12px;
-    color: gray;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ===============================
-# HEADER
-# ===============================
-st.markdown("""
-<div style="background:#2563EB;padding:15px;color:white;font-size:20px;font-weight:bold;">
-Generador de Certificados
-</div>
-""", unsafe_allow_html=True)
+st.title("📄 Generador de Certificados")
 
 # ===============================
 # SESSION STATE
@@ -75,15 +31,10 @@ if "pdf_count" not in st.session_state:
     st.session_state.pdf_count = 0
 
 # ===============================
-# SUBIR ARCHIVOS
+# UPLOAD
 # ===============================
-col1, col2 = st.columns(2)
-
-with col1:
-    excel_file = st.file_uploader("📊 Subir Excel", type=["xlsx"])
-
-with col2:
-    docx_template = st.file_uploader("📄 Subir plantilla Word", type=["docx"])
+excel_file = st.file_uploader("📊 Subir Excel", type=["xlsx"])
+docx_template = st.file_uploader("📄 Subir plantilla Word", type=["docx"])
 
 # ===============================
 # PROCESAMIENTO
@@ -94,26 +45,7 @@ if excel_file and docx_template and not st.session_state.procesado:
     df = df.dropna(how="all").fillna("")
     df.columns = df.columns.str.strip().str.lower()
 
-    total = len(df)
-    cols_count = len(df.columns)
-
-    # ✅ MÉTRICAS
-    html_metrics = f"""
-<div class="metric-row">
-    <div class="metric-box">
-        <div class="metric-num">{total}</div>
-        <div class="metric-label">Registros</div>
-    </div>
-    <div class="metric-box">
-        <div class="metric-num">{cols_count}</div>
-        <div class="metric-label">Columnas</div>
-    </div>
-</div>
-"""
-    st.markdown(html_metrics, unsafe_allow_html=True)
-
-    # PREVIEW
-    st.dataframe(df.head(), use_container_width=True)
+    st.write(f"Registros: {len(df)}")
 
     formato = st.radio(
         "Formato de salida",
@@ -121,10 +53,7 @@ if excel_file and docx_template and not st.session_state.procesado:
         horizontal=True
     )
 
-    # ===============================
-    # BOTÓN PROCESAR
-    # ===============================
-    if st.button("⚙️ Procesar documentos", use_container_width=True):
+    if st.button("⚙️ Procesar documentos"):
 
         carpeta = "certificados"
         os.makedirs(carpeta, exist_ok=True)
@@ -133,73 +62,95 @@ if excel_file and docx_template and not st.session_state.procesado:
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
 
+        # =====================================
+        # GENERAR DOCX (OPTIMIZADO)
+        # =====================================
         docx_generados = []
+        template = DocxTemplate(template_path)
 
-        for i, fila in df.iterrows():
+        for fila in df.to_dict("records"):
 
-            doc = DocxTemplate(template_path)
-            doc.render(fila.to_dict())
+            doc = template.clone()
+            doc.render(fila)
 
             nombre = f"{fila.get('nro','')}_{fila.get('contratante','')}_{fila.get('poliza','')}.docx"
-
-            # limpiar nombre
             nombre = nombre.replace("/", "_").replace("\\", "_")
 
             ruta = os.path.join(carpeta, nombre)
 
             doc.save(ruta)
-            docx_generados.append(ruta)
 
-        # ===============================
-        # CONVERTIR A PDF
-        # ===============================
+            if os.path.exists(ruta) and os.path.getsize(ruta) > 0:
+                docx_generados.append(ruta)
+            else:
+                st.warning(f"DOCX inválido: {nombre}")
+
+        # =====================================
+        # CONVERTIR PDF EN LOTE 🔥
+        # =====================================
         pdf_generados = []
 
         if formato in ["PDF", "Ambos (Word + PDF)"]:
+
             output_dir = tempfile.gettempdir()
 
+            try:
+                subprocess.run(
+                    [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to", "pdf",
+                        "--outdir", output_dir,
+                        *docx_generados
+                    ],
+                    check=True
+                )
+            except Exception as e:
+                st.error(f"Error en conversión PDF: {e}")
+
             for docx_path in docx_generados:
-                try:
-                    subprocess.run(
-                        [
-                            "libreoffice",
-                            "--headless",
-                            "--convert-to",
-                            "pdf",
-                            "--outdir",
-                            output_dir,
-                            docx_path
-                        ],
-                        check=True,
-                        capture_output=True
-                    )
+                nombre_pdf = os.path.basename(docx_path).replace(".docx", ".pdf")
+                pdf_path = os.path.join(output_dir, nombre_pdf)
 
-                    pdf_path = docx_path.replace(".docx", ".pdf")
+                if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+                    pdf_generados.append(pdf_path)
+                else:
+                    st.warning(f"PDF no generado: {nombre_pdf}")
 
-                    if os.path.exists(pdf_path):
-                        pdf_generados.append(pdf_path)
+        st.write("DOCX:", len(docx_generados))
+        st.write("PDF:", len(pdf_generados))
 
-                except:
-                    st.warning(f"No se pudo convertir: {docx_path}")
-
-        # ===============================
-        # CREAR ZIP
-        # ===============================
+        # =====================================
+        # CREAR ZIP (ROBUSTO STREAMLIT)
+        # =====================================
         zip_buffer = BytesIO()
+        files_added = 0
 
-        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
 
             if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
                 for f in docx_generados:
-                    zipf.write(f, os.path.basename(f))
+                    if os.path.exists(f) and os.path.getsize(f) > 0:
+                        with open(f, "rb") as file_data:
+                            zipf.writestr(os.path.basename(f), file_data.read())
+                            files_added += 1
 
             if formato in ["PDF", "Ambos (Word + PDF)"]:
                 for f in pdf_generados:
-                    zipf.write(f, os.path.basename(f))
+                    if os.path.exists(f) and os.path.getsize(f) > 0:
+                        with open(f, "rb") as file_data:
+                            zipf.writestr(os.path.basename(f), file_data.read())
+                            files_added += 1
 
         zip_buffer.seek(0)
 
-        # guardar estado
+        if files_added == 0:
+            st.error("❌ No se generaron archivos. ZIP vacío.")
+            st.stop()
+
+        # =====================================
+        # GUARDAR EN SESSION
+        # =====================================
         st.session_state.procesado = True
         st.session_state.zip_buffer = zip_buffer
         st.session_state.contador = len(docx_generados)
@@ -209,40 +160,26 @@ if excel_file and docx_template and not st.session_state.procesado:
         st.rerun()
 
 # ===============================
-# RESULTADOS
+# DESCARGA
 # ===============================
 if st.session_state.procesado and st.session_state.zip_buffer:
 
-    fmt = st.session_state.formato
+    st.success("✅ Archivos generados correctamente")
 
-    html_result = f"""
-<div class="metric-row">
-    <div class="metric-box">
-        <div class="metric-num">{st.session_state.contador}</div>
-        <div class="metric-label">DOCX generados</div>
-    </div>
-    <div class="metric-box">
-        <div class="metric-num">{st.session_state.pdf_count if fmt != "Word (.docx)" else "—"}</div>
-        <div class="metric-label">PDF generados</div>
-    </div>
-    <div class="metric-box">
-        <div class="metric-num">✓</div>
-        <div class="metric-label">ZIP listo</div>
-    </div>
-</div>
-"""
-    st.markdown(html_result, unsafe_allow_html=True)
+    st.write(f"DOCX generados: {st.session_state.contador}")
+    st.write(f"PDF generados: {st.session_state.pdf_count}")
 
     st.download_button(
         label="📦 Descargar ZIP",
         data=st.session_state.zip_buffer,
         file_name="certificados.zip",
-        mime="application/zip",
-        use_container_width=True
+        mime="application/zip"
     )
 
-    # limpiar
-    if st.button("🧹 Nuevo proceso", use_container_width=True):
+    # =====================================
+    # LIMPIEZA
+    # =====================================
+    if st.button("🧹 Nuevo proceso"):
 
         st.session_state.procesado = False
         st.session_state.zip_buffer = None
