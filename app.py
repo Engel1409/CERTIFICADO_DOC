@@ -195,22 +195,7 @@ if excel_file and docx_template and not st.session_state.procesado:
 if st.session_state.procesado:
 
     html_result = f"""
-<div class="metric-row">
 
-    <div class="metric-box">
-        <div class="metric-num">{st.session_state.contador}</div>
-        <div class="metric-label">Word generados</div>
-    </div>
-
-    <div class="metric-box">
-        <div class="metric-num">{st.session_state.pdf_count}</div>
-        <div class="metric-label">PDF generados</div>
-    </div>
-
-    <div class="metric-box">
-        <div class="metric-num">✓</div>
-        <div class="metric-label">ZIP listo</div>
-    </div>
 
 </div>
 """
