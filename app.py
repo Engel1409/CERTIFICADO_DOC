@@ -22,48 +22,6 @@ st.set_page_config(
 # ===============================
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap');
-
-:root {
-    --primary: #2563EB;
-    --dark: #1A1A1A;
-    --gray: #F5F5F5;
-    --mid: #6B6B6B;
-    --border: #E0E0E0;
-    --white: #FFFFFF;
-}
-
-html, body, [class*="css"] {
-    font-family: 'Barlow', sans-serif;
-    color: var(--dark);
-}
-
-.stApp {
-    background-color: var(--gray);
-}
-
-.header-bar {
-    background: var(--primary);
-    padding: 18px 36px;
-    margin: -1rem -1rem 2rem -1rem;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.logo-text {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 28px;
-    font-weight: 700;
-    color: white;
-}
-
-.header-sub {
-    font-size: 13px;
-    color: rgba(255,255,255,0.8);
-    margin-left: auto;
-}
-
 .metric-row {
     display: flex;
     gap: 16px;
@@ -72,8 +30,8 @@ html, body, [class*="css"] {
 
 .metric-box {
     background: white;
-    border: 1px solid var(--border);
-    border-top: 3px solid var(--primary);
+    border: 1px solid #ddd;
+    border-top: 3px solid #2563EB;
     border-radius: 6px;
     padding: 18px;
     flex: 1;
@@ -81,16 +39,22 @@ html, body, [class*="css"] {
 }
 
 .metric-num {
-    font-size: 34px;
-    font-weight: 700;
-    color: var(--primary);
+    font-size: 32px;
+    font-weight: bold;
+    color: #2563EB;
 }
 
 .metric-label {
     font-size: 12px;
-    color: var(--mid);
-    text-transform: uppercase;
+    color: gray;
 }
+
+/* Botones */
+.stButton > button {
+    background-color: #2563EB !important;
+    color: white !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -98,9 +62,8 @@ html, body, [class*="css"] {
 # HEADER
 # ===============================
 st.markdown("""
-<div class="header-bar">
-    <div class="logo-text">DOCFLOW</div>
-    <div class="header-sub">Generación masiva de documentos</div>
+<div style="background:#2563EB;padding:16px;color:white;font-weight:bold;font-size:20px;">
+DOCFLOW – Generación masiva de documentos
 </div>
 """, unsafe_allow_html=True)
 
@@ -109,15 +72,18 @@ st.markdown("""
 # ===============================
 if "procesado" not in st.session_state:
     st.session_state.procesado = False
+
 if "zip_buffer" not in st.session_state:
     st.session_state.zip_buffer = None
+
 if "contador" not in st.session_state:
     st.session_state.contador = 0
+
 if "pdf_count" not in st.session_state:
     st.session_state.pdf_count = 0
 
 # ===============================
-# SUBIDA DE ARCHIVOS
+# SUBIDA ARCHIVOS
 # ===============================
 col1, col2 = st.columns(2)
 
@@ -130,69 +96,153 @@ with col2:
 # ===============================
 # PROCESAMIENTO
 # ===============================
-if excel_file and docx_template:
+if excel_file and docx_template and not st.session_state.procesado:
 
-    df = pd.read_excel(excel_file, dtype=str).fillna("")
+    df = pd.read_excel(excel_file, dtype=str)
+    df = df.dropna(how="all").reset_index(drop=True).fillna("")
     df = df.apply(lambda x: x.astype(str).str.upper())
 
     total = len(df)
     cols_count = len(df.columns)
 
-    # ✅ MÉTRICAS CORREGIDAS
-    st.markdown(f"""
-    <div class="metric-row">
+    # ✅ METRICS (CORREGIDO)
+    html_metrics = f"""
+<div class="metric-row">
 
-        <div class="metric-box">
-            <div class="metric-num">{total}</div>
-            <div class="metric-label">Registros detectados</div>
-        </div>
-
-        <div class="metric-box">
-            <div class="metric-num">{cols_count}</div>
-            <div class="metric-label">Campos encontrados</div>
-        </div>
-
+    <div class="metric-box">
+        <div class="metric-num">{total}</div>
+        <div class="metric-label">Registros detectados</div>
     </div>
-    """, unsafe_allow_html=True)
 
-    # preview
-    st.dataframe(df.head())
+    <div class="metric-box">
+        <div class="metric-num">{cols_count}</div>
+        <div class="metric-label">Campos encontrados</div>
+    </div>
+
+</div>
+"""
+    st.markdown(html_metrics, unsafe_allow_html=True)
+
+    # PREVIEW
+    st.dataframe(df.head(), use_container_width=True)
 
     formato = st.radio(
-        "Formato de salida",
-        ["Word (.docx)", "PDF", "Ambos (Word + PDF)"]
+        "Formato",
+        ["Word (.docx)", "PDF", "Ambos"]
     )
 
-    if st.button("Procesar"):
+    if st.button("Procesar documentos", use_container_width=True):
 
-        carpeta = "docs"
+        carpeta = "documentos"
         os.makedirs(carpeta, exist_ok=True)
 
         template_path = "plantilla.docx"
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
 
-        archivos = []
+        docx_generados = []
 
+        # ===============================
+        # GENERAR DOCX
+        # ===============================
         for i, fila in enumerate(df.to_dict(orient="records")):
+
             doc = DocxTemplate(template_path)
             doc.render(fila)
 
             nombre = f"doc_{i}.docx"
             ruta = os.path.join(carpeta, nombre)
-            doc.save(ruta)
-            archivos.append(ruta)
 
+            doc.save(ruta)
+            docx_generados.append(ruta)
+
+        # ===============================
+        # PDF
+        # ===============================
+        pdf_generados = []
+
+        if formato in ["PDF", "Ambos"]:
+
+            for docx_path in docx_generados:
+
+                subprocess.run([
+                    "libreoffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    carpeta,
+                    docx_path
+                ])
+
+                pdf_path = docx_path.replace(".docx", ".pdf")
+
+                if os.path.exists(pdf_path):
+                    pdf_generados.append(pdf_path)
+
+        # ===============================
+        # ZIP
+        # ===============================
         zip_buffer = BytesIO()
 
         with zipfile.ZipFile(zip_buffer, "w") as zipf:
-            for a in archivos:
-                zipf.write(a, os.path.basename(a))
+
+            if formato in ["Word (.docx)", "Ambos"]:
+                for f in docx_generados:
+                    zipf.write(f, os.path.basename(f))
+
+            if formato in ["PDF", "Ambos"]:
+                for f in pdf_generados:
+                    zipf.write(f, os.path.basename(f))
 
         zip_buffer.seek(0)
 
-        st.download_button(
-            "Descargar ZIP",
-            zip_buffer,
-            file_name="docs.zip"
-        )
+        st.session_state.procesado = True
+        st.session_state.zip_buffer = zip_buffer
+        st.session_state.contador = len(docx_generados)
+        st.session_state.pdf_count = len(pdf_generados)
+
+        st.rerun()
+
+# ===============================
+# RESULTADO
+# ===============================
+if st.session_state.procesado:
+
+    html_result = f"""
+<div class="metric-row">
+
+    <div class="metric-box">
+        <div class="metric-num">{st.session_state.contador}</div>
+        <div class="metric-label">Word generados</div>
+    </div>
+
+    <div class="metric-box">
+        <div class="metric-num">{st.session_state.pdf_count}</div>
+        <div class="metric-label">PDF generados</div>
+    </div>
+
+    <div class="metric-box">
+        <div class="metric-num">✓</div>
+        <div class="metric-label">ZIP listo</div>
+    </div>
+
+</div>
+"""
+    st.markdown(html_result, unsafe_allow_html=True)
+
+    st.download_button(
+        "Descargar ZIP",
+        st.session_state.zip_buffer,
+        file_name="documentos.zip",
+        use_container_width=True
+    )
+
+    if st.button("Limpiar"):
+
+        st.session_state.procesado = False
+        st.session_state.zip_buffer = None
+
+        shutil.rmtree("documentos", ignore_errors=True)
+
+        st.rerun()
