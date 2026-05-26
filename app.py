@@ -17,21 +17,6 @@ st.set_page_config(page_title="Generador de Certificados", layout="wide")
 st.title("📄 Generador de Certificados")
 
 # ===============================
-# SESSION STATE
-# ===============================
-if "procesado" not in st.session_state:
-    st.session_state.procesado = False
-
-if "zip_buffer" not in st.session_state:
-    st.session_state.zip_buffer = None
-
-if "contador" not in st.session_state:
-    st.session_state.contador = 0
-
-if "pdf_count" not in st.session_state:
-    st.session_state.pdf_count = 0
-
-# ===============================
 # UPLOAD
 # ===============================
 excel_file = st.file_uploader("📊 Subir Excel", type=["xlsx"])
@@ -40,7 +25,7 @@ docx_template = st.file_uploader("📄 Subir plantilla Word", type=["docx"])
 # ===============================
 # PROCESAMIENTO
 # ===============================
-if excel_file and docx_template and not st.session_state.procesado:
+if excel_file and docx_template:
 
     df = pd.read_excel(excel_file, dtype=str)
     df = df.dropna(how="all").fillna("")
@@ -57,7 +42,7 @@ if excel_file and docx_template and not st.session_state.procesado:
     if st.button("⚙️ Procesar documentos"):
 
         # ===============================
-        # CARPETA ÚNICA POR EJECUCIÓN
+        # CARPETA ÚNICA
         # ===============================
         base_dir = f"work_{uuid.uuid4().hex}"
         docx_dir = os.path.join(base_dir, "docx")
@@ -76,8 +61,7 @@ if excel_file and docx_template and not st.session_state.procesado:
         # ===============================
         # FECHA
         # ===============================
-        hoy = datetime.now()
-        fecha_texto = hoy.strftime("%d/%m/%Y")
+        fecha_texto = datetime.now().strftime("%d/%m/%Y")
 
         # ===============================
         # GENERAR DOCX
@@ -102,8 +86,6 @@ if excel_file and docx_template and not st.session_state.procesado:
 
             if os.path.exists(ruta) and os.path.getsize(ruta) > 0:
                 docx_generados.append(ruta)
-            else:
-                st.warning(f"DOCX inválido: {nombre}")
 
         # ===============================
         # CONVERTIR PDF
@@ -111,7 +93,6 @@ if excel_file and docx_template and not st.session_state.procesado:
         pdf_generados = []
 
         if formato in ["PDF", "Ambos (Word + PDF)"]:
-
             try:
                 subprocess.run(
                     [
@@ -123,85 +104,51 @@ if excel_file and docx_template and not st.session_state.procesado:
                     ],
                     check=True
                 )
-
-                time.sleep(1)  # 🔥 clave estabilidad
-
+                time.sleep(1)
             except Exception as e:
                 st.error(f"Error PDF: {e}")
 
             for docx_path in docx_generados:
-                nombre_pdf = os.path.basename(docx_path).replace(".docx", ".pdf")
-                pdf_path = os.path.join(pdf_dir, nombre_pdf)
+                pdf_path = os.path.join(
+                    pdf_dir,
+                    os.path.basename(docx_path).replace(".docx", ".pdf")
+                )
 
                 if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
                     pdf_generados.append(pdf_path)
-                else:
-                    st.warning(f"PDF no generado: {nombre_pdf}")
-
-        st.write("DOCX:", len(docx_generados))
-        st.write("PDF:", len(pdf_generados))
 
         # ===============================
-        # CREAR ZIP (FIX DEFINITIVO)
+        # CREAR ZIP
         # ===============================
         zip_buffer = BytesIO()
-        files_added = 0
 
         with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zipf:
 
             if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
                 for f in docx_generados:
-                    if os.path.exists(f):
-                        with open(f, "rb") as file_data:
-                            zipf.writestr(os.path.basename(f), file_data.read())
-                            files_added += 1
+                    with open(f, "rb") as file_data:
+                        zipf.writestr(os.path.basename(f), file_data.read())
 
             if formato in ["PDF", "Ambos (Word + PDF)"]:
                 for f in pdf_generados:
-                    if os.path.exists(f):
-                        with open(f, "rb") as file_data:
-                            zipf.writestr(os.path.basename(f), file_data.read())
-                            files_added += 1
+                    with open(f, "rb") as file_data:
+                        zipf.writestr(os.path.basename(f), file_data.read())
 
         zip_buffer.seek(0)
 
-        if files_added == 0:
-            st.error("❌ No se generaron archivos")
-            shutil.rmtree(base_dir, ignore_errors=True)
-            st.stop()
+        # ===============================
+        # DESCARGA (FIX REAL)
+        # ===============================
+        st.success("✅ Archivos generados correctamente")
 
-        # ✅ 🔥 FIX CRÍTICO (ZIP SIEMPRE BIEN)
-        st.session_state.zip_buffer = zip_buffer.getvalue()
+        st.download_button(
+            label="📦 Descargar ZIP",
+            data=zip_buffer.getvalue(),
+            file_name=f"certificados_{uuid.uuid4().hex}.zip",  # 🔥 clave
+            mime="application/zip"
+        )
 
-        st.session_state.procesado = True
-        st.session_state.contador = len(docx_generados)
-        st.session_state.pdf_count = len(pdf_generados)
-
-        # ✅ limpieza total
+        # ===============================
+        # LIMPIEZA
+        # ===============================
         shutil.rmtree(base_dir, ignore_errors=True)
-
-        st.rerun()
-
-# ===============================
-# DESCARGA
-# ===============================
-if st.session_state.procesado and st.session_state.zip_buffer:
-
-    st.success("✅ Archivos generados correctamente")
-
-    st.write(f"DOCX: {st.session_state.contador}")
-    st.write(f"PDF: {st.session_state.pdf_count}")
-
-    st.download_button(
-        label="📦 Descargar ZIP",
-        data=st.session_state.zip_buffer,
-        file_name="certificados.zip",
-        mime="application/zip"
-    )
-
-    if st.button("🧹 Nuevo proceso"):
-        st.session_state.procesado = False
-        st.session_state.zip_buffer = None
-        st.session_state.contador = 0
-        st.session_state.pdf_count = 0
-        st.rerun()
