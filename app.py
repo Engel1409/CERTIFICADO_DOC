@@ -29,6 +29,12 @@ if excel_file and docx_template:
 
     if st.button("⚙️ Procesar"):
 
+        # ✅ Barra de progreso
+        progress = st.progress(0)
+        status = st.empty()
+        total = len(df)
+        contador = 0
+
         base_dir = f"work_{uuid.uuid4().hex}"
         os.makedirs(base_dir, exist_ok=True)
 
@@ -66,12 +72,19 @@ if excel_file and docx_template:
             if os.path.exists(ruta):
                 docx_generados.append(ruta)
 
+            # ✅ Actualizar progreso
+            contador += 1
+            progress.progress(contador / total)
+            status.text(f"Generando DOCX {contador} de {total}...")
+
         # =========================
         # PDF
         # =========================
         pdf_generados = []
 
         if formato in ["PDF", "Ambos"] and docx_generados:
+
+            status.text("Convirtiendo a PDF... ⏳")
 
             subprocess.run(
                 [
@@ -94,6 +107,8 @@ if excel_file and docx_template:
         # =========================
         # CREAR ZIP
         # =========================
+        status.text("Empaquetando archivos... 📦")
+
         zip_path = os.path.join(base_dir, "archivos.zip")
 
         with zipfile.ZipFile(zip_path, "w") as z:
@@ -107,7 +122,7 @@ if excel_file and docx_template:
                     z.write(f, os.path.basename(f))
 
         # =========================
-        # 🔥 FIX FINAL (BASE64)
+        # DESCARGA
         # =========================
         with open(zip_path, "rb") as f:
             data = f.read()
@@ -123,5 +138,6 @@ if excel_file and docx_template:
 
         st.markdown(href, unsafe_allow_html=True)
 
+        progress.progress(1.0)
+        status.text("✅ Proceso completado")
         st.success("✅ Listo")
-
