@@ -48,11 +48,16 @@ if excel_file and docx_template:
         os.makedirs(docx_dir, exist_ok=True)
         os.makedirs(pdf_dir, exist_ok=True)
 
+        # ===============================
         # TEMPLATE
+        # ===============================
         template_path = os.path.join(base_dir, "plantilla.docx")
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
 
+        # ===============================
+        # FECHA
+        # ===============================
         fecha_texto = datetime.now().strftime("%d/%m/%Y")
 
         # ===============================
@@ -76,7 +81,8 @@ if excel_file and docx_template:
 
             doc.save(ruta)
 
-            if os.path.exists(ruta) and os.path.getsize(ruta) > 1000:
+            # ✅ VALIDACIÓN REAL
+            if os.path.exists(ruta) and os.path.getsize(ruta) > 0:
                 docx_generados.append(ruta)
 
         # ===============================
@@ -98,26 +104,39 @@ if excel_file and docx_template:
                     check=True
                 )
 
-                time.sleep(2)  # 🔥 estabilidad
+                time.sleep(2)  # 🔥 importante
 
             except Exception as e:
                 st.error(f"Error PDF: {e}")
 
             for docx_path in docx_generados:
+
                 pdf_path = os.path.join(
                     pdf_dir,
                     os.path.basename(docx_path).replace(".docx", ".pdf")
                 )
 
-                if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
+                # ✅ VALIDACIÓN REAL
+                if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
                     pdf_generados.append(pdf_path)
                 else:
                     st.warning(f"PDF inválido: {os.path.basename(pdf_path)}")
 
         # ===============================
+        # VALIDACIÓN FINAL
+        # ===============================
+        st.write("DOCX válidos:", len(docx_generados))
+        st.write("PDF válidos:", len(pdf_generados))
+
+        if len(docx_generados) == 0 and len(pdf_generados) == 0:
+            st.error("❌ No se generaron archivos válidos")
+            shutil.rmtree(base_dir, ignore_errors=True)
+            st.stop()
+
+        # ===============================
         # ZIP DOCX
         # ===============================
-        if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
+        if formato in ["Word (.docx)", "Ambos (Word + PDF)"] and docx_generados:
 
             zip_docx = BytesIO()
             with zipfile.ZipFile(zip_docx, "w", compression=zipfile.ZIP_DEFLATED) as z:
@@ -154,9 +173,6 @@ if excel_file and docx_template:
                 mime="application/zip"
             )
 
-        # ===============================
-        # LIMPIEZA
-        # ===============================
         shutil.rmtree(base_dir, ignore_errors=True)
 
         st.success("✅ Proceso completado correctamente")
