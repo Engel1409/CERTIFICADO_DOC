@@ -40,6 +40,9 @@ if excel_file and docx_template:
 
     if st.button("⚙️ Procesar documentos"):
 
+        # ===============================
+        # CARPETA DE TRABAJO
+        # ===============================
         base_dir = f"work_{uuid.uuid4().hex}"
         docx_dir = os.path.join(base_dir, "docx")
         pdf_dir = os.path.join(base_dir, "pdf")
@@ -47,7 +50,9 @@ if excel_file and docx_template:
         os.makedirs(docx_dir, exist_ok=True)
         os.makedirs(pdf_dir, exist_ok=True)
 
+        # ===============================
         # TEMPLATE
+        # ===============================
         template_path = os.path.join(base_dir, "plantilla.docx")
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
@@ -60,6 +65,7 @@ if excel_file and docx_template:
         docx_generados = []
 
         for fila in df.to_dict("records"):
+
             fila = {k.strip().lower(): v for k, v in fila.items()}
             fila["fecha"] = fecha_texto
 
@@ -83,6 +89,7 @@ if excel_file and docx_template:
         pdf_generados = []
 
         if formato in ["PDF", "Ambos (Word + PDF)"]:
+
             try:
                 subprocess.run(
                     [
@@ -95,12 +102,13 @@ if excel_file and docx_template:
                     check=True
                 )
 
-                time.sleep(2)
+                time.sleep(2)  # estabilidad
 
             except Exception as e:
                 st.error(f"Error PDF: {e}")
 
             for docx_path in docx_generados:
+
                 pdf_path = os.path.join(
                     pdf_dir,
                     os.path.basename(docx_path).replace(".docx", ".pdf")
@@ -111,16 +119,18 @@ if excel_file and docx_template:
                 else:
                     st.warning(f"PDF inválido: {os.path.basename(pdf_path)}")
 
+        # ===============================
+        # VALIDACIÓN
+        # ===============================
         st.write("DOCX válidos:", len(docx_generados))
         st.write("PDF válidos:", len(pdf_generados))
 
         if len(docx_generados) == 0 and len(pdf_generados) == 0:
             st.error("❌ No se generaron archivos")
-            st.success("✅ Proceso completado correctamente"
             st.stop()
 
         # ===============================
-        # ZIP DOCX (FIX FINAL)
+        # ZIP DOCX
         # ===============================
         if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
 
@@ -130,7 +140,7 @@ if excel_file and docx_template:
                 for f in docx_generados:
                     z.write(f, os.path.basename(f))
 
-            time.sleep(1)  # 🔥 CLAVE FINAL
+            time.sleep(1)  # asegurar cierre
 
             with open(zip_path, "rb") as f:
                 zip_bytes = f.read()
@@ -143,7 +153,7 @@ if excel_file and docx_template:
             )
 
         # ===============================
-        # ZIP PDF (FIX FINAL)
+        # ZIP PDF
         # ===============================
         if formato in ["PDF", "Ambos (Word + PDF)"] and pdf_generados:
 
@@ -153,7 +163,7 @@ if excel_file and docx_template:
                 for f in pdf_generados:
                     z.write(f, os.path.basename(f))
 
-            time.sleep(1)  # 🔥 CLAVE FINAL
+            time.sleep(1)
 
             with open(zip_path_pdf, "rb") as f:
                 zip_bytes_pdf = f.read()
@@ -165,6 +175,14 @@ if excel_file and docx_template:
                 mime="application/zip"
             )
 
-        shutil.rmtree(base_dir, ignore_errors=True)
+        # ❗ NO BORRAR AQUÍ (ANTES FALLABA)
+        st.success("✅ Archivos listos para descargar")
 
-        st.success("✅ Proceso completado correctamente")
+# ===============================
+# LIMPIEZA MANUAL (OPCIONAL)
+# ===============================
+if st.button("🧹 Limpiar archivos temporales"):
+    for carpeta in os.listdir():
+        if carpeta.startswith("work_"):
+            shutil.rmtree(carpeta, ignore_errors=True)
+    st.success("✅ Limpieza realizada")
