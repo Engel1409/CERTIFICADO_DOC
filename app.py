@@ -117,7 +117,7 @@ if excel_file and docx_template:
         href = f"""
         <a download="certificados.zip"
            href="data:application/zip;base64,{b64}">
-           📦 Descargar ZIP (FUNCIONA SIEMPRE)
+           📦 Descargar ZIP
         </a>
         """
 
