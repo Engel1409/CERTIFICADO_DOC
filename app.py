@@ -140,7 +140,7 @@ if excel_file and docx_template and not st.session_state.procesado:
             doc = DocxTemplate(template_path)
             doc.render(fila.to_dict())
 
-            nombre = f"{fila.get('poliza', i)}.docx"
+            nombre = f"{fila.get('nro','')}_{fila.get('contratante','')}_{fila.get('poliza','')}.docx"
 
             # limpiar nombre
             nombre = nombre.replace("/", "_").replace("\\", "_")
