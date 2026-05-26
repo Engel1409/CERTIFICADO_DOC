@@ -40,9 +40,6 @@ if excel_file and docx_template:
 
     if st.button("⚙️ Procesar documentos"):
 
-        # ===============================
-        # CARPETA ÚNICA
-        # ===============================
         base_dir = f"work_{uuid.uuid4().hex}"
         docx_dir = os.path.join(base_dir, "docx")
         pdf_dir = os.path.join(base_dir, "pdf")
@@ -50,16 +47,11 @@ if excel_file and docx_template:
         os.makedirs(docx_dir, exist_ok=True)
         os.makedirs(pdf_dir, exist_ok=True)
 
-        # ===============================
         # TEMPLATE
-        # ===============================
         template_path = os.path.join(base_dir, "plantilla.docx")
         with open(template_path, "wb") as f:
             f.write(docx_template.read())
 
-        # ===============================
-        # FECHA
-        # ===============================
         fecha_texto = datetime.now().strftime("%d/%m/%Y")
 
         # ===============================
@@ -68,7 +60,6 @@ if excel_file and docx_template:
         docx_generados = []
 
         for fila in df.to_dict("records"):
-
             fila = {k.strip().lower(): v for k, v in fila.items()}
             fila["fecha"] = fecha_texto
 
@@ -92,7 +83,6 @@ if excel_file and docx_template:
         pdf_generados = []
 
         if formato in ["PDF", "Ambos (Word + PDF)"]:
-
             try:
                 subprocess.run(
                     [
@@ -105,13 +95,12 @@ if excel_file and docx_template:
                     check=True
                 )
 
-                time.sleep(2)  # 🔥 importante
+                time.sleep(2)
 
             except Exception as e:
                 st.error(f"Error PDF: {e}")
 
             for docx_path in docx_generados:
-
                 pdf_path = os.path.join(
                     pdf_dir,
                     os.path.basename(docx_path).replace(".docx", ".pdf")
@@ -122,9 +111,6 @@ if excel_file and docx_template:
                 else:
                     st.warning(f"PDF inválido: {os.path.basename(pdf_path)}")
 
-        # ===============================
-        # VALIDACIÓN
-        # ===============================
         st.write("DOCX válidos:", len(docx_generados))
         st.write("PDF válidos:", len(pdf_generados))
 
@@ -134,9 +120,9 @@ if excel_file and docx_template:
             st.stop()
 
         # ===============================
-        # ZIP DOCX (ARCHIVO FÍSICO ✅)
+        # ZIP DOCX (FIX FINAL)
         # ===============================
-        if formato in ["Word (.docx)", "Ambos (Word + PDF)"] and docx_generados:
+        if formato in ["Word (.docx)", "Ambos (Word + PDF)"]:
 
             zip_path = os.path.join(base_dir, "docx.zip")
 
@@ -144,16 +130,20 @@ if excel_file and docx_template:
                 for f in docx_generados:
                     z.write(f, os.path.basename(f))
 
+            time.sleep(1)  # 🔥 CLAVE FINAL
+
             with open(zip_path, "rb") as f:
-                st.download_button(
-                    "📄 Descargar DOCX",
-                    f,
-                    file_name=f"docx_{uuid.uuid4().hex}.zip",
-                    mime="application/zip"
-                )
+                zip_bytes = f.read()
+
+            st.download_button(
+                "📄 Descargar DOCX",
+                zip_bytes,
+                file_name=f"docx_{uuid.uuid4().hex}.zip",
+                mime="application/zip"
+            )
 
         # ===============================
-        # ZIP PDF (ARCHIVO FÍSICO ✅)
+        # ZIP PDF (FIX FINAL)
         # ===============================
         if formato in ["PDF", "Ambos (Word + PDF)"] and pdf_generados:
 
@@ -163,17 +153,18 @@ if excel_file and docx_template:
                 for f in pdf_generados:
                     z.write(f, os.path.basename(f))
 
-            with open(zip_path_pdf, "rb") as f:
-                st.download_button(
-                    "📑 Descargar PDF",
-                    f,
-                    file_name=f"pdf_{uuid.uuid4().hex}.zip",
-                    mime="application/zip"
-                )
+            time.sleep(1)  # 🔥 CLAVE FINAL
 
-        # ===============================
-        # LIMPIEZA
-        # ===============================
+            with open(zip_path_pdf, "rb") as f:
+                zip_bytes_pdf = f.read()
+
+            st.download_button(
+                "📑 Descargar PDF",
+                zip_bytes_pdf,
+                file_name=f"pdf_{uuid.uuid4().hex}.zip",
+                mime="application/zip"
+            )
+
         shutil.rmtree(base_dir, ignore_errors=True)
 
         st.success("✅ Proceso completado correctamente")
