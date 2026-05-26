@@ -66,14 +66,19 @@ if excel_file and docx_template and not st.session_state.procesado:
         # GENERAR DOCX (OPTIMIZADO)
         # =====================================
         docx_generados = []
+        
+        hoy = datetime.now()
+        fecha_texto = hoy.strftime("%d/%m/%Y")
+
         template = DocxTemplate(template_path)
 
         for fila in df.to_dict("records"):
 
             doc = DocxTemplate(template_path)  # ✅ FIX
+            fila['fecha'] = fecha_texto
             doc.render(fila)
 
-            nombre = f"{fila.get('nro','')}_{fila.get('contratante','')}_{fila.get('poliza','')}.docx"
+            nombre = f"{fila.get('nro','')}_{fila.get('asegurado','')}_{fila.get('poliza','')}.docx"
             nombre = nombre.replace("/", "_").replace("\\", "_")
 
             ruta = os.path.join(carpeta, nombre)
