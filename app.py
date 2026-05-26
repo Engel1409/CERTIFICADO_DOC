@@ -106,22 +106,7 @@ if excel_file and docx_template and not st.session_state.procesado:
     cols_count = len(df.columns)
 
     # ✅ METRICS (CORREGIDO)
-    html_metrics = f"""
-<div class="metric-row">
 
-    <div class="metric-box">
-        <div class="metric-num">{total}</div>
-        <div class="metric-label">Registros detectados</div>
-    </div>
-
-    <div class="metric-box">
-        <div class="metric-num">{cols_count}</div>
-        <div class="metric-label">Campos encontrados</div>
-    </div>
-
-</div>
-"""
-    st.markdown(html_metrics, unsafe_allow_html=True)
 
     # PREVIEW
     st.dataframe(df.head(), use_container_width=True)
