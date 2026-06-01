@@ -3,11 +3,12 @@ import pandas as pd
 import os
 import zipfile
 import subprocess
-import shutil
+import re
 import uuid
 import time
 import base64
 from docxtpl import DocxTemplate
+from docx import Document
 from datetime import datetime
 
 st.set_page_config(page_title="Generador", layout="wide")
@@ -35,6 +36,62 @@ if excel_file and docx_template:
         st.error(f"❌ No se pudo leer el Excel: {e}")
         st.stop()
 
+    # ─── Leer tags del Word ───
+    try:
+        doc_diag = Document(docx_template)
+        patron = re.compile(r"{{(.*?)}}")
+        tags_word = set()
+
+        for para in doc_diag.paragraphs:
+            for tag in patron.findall(para.text):
+                tags_word.add(tag.strip().lower())
+
+        for table in doc_diag.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        for tag in patron.findall(para.text):
+                            tags_word.add(tag.strip().lower())
+
+    except Exception as e:
+        st.error(f"❌ No se pudo leer la plantilla Word: {e}")
+        st.stop()
+
+    columnas_excel = set(df.columns.tolist())
+
+    # =========================================
+    # DIAGNÓSTICO
+    # =========================================
+    st.markdown("---")
+    st.subheader("🔎 Diagnóstico de coincidencias")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**🏷️ Tags del Word vs Excel**")
+        filas_diag = []
+        for tag in sorted(tags_word):
+            estado = "✅ OK" if tag in columnas_excel else "❌ No encontrado en Excel"
+            filas_diag.append({"Tag en Word": f"{{{{{tag}}}}}", "En Excel": estado})
+        st.dataframe(pd.DataFrame(filas_diag), use_container_width=True, hide_index=True)
+
+    with col2:
+        st.markdown("**📋 Columnas del Excel sin tag en Word**")
+        sobrantes = sorted(columnas_excel - tags_word)
+        if sobrantes:
+            filas_sob = [{"Columna Excel": c, "Estado": "⚠️ Sin tag en Word"} for c in sobrantes]
+            st.dataframe(pd.DataFrame(filas_sob), use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ Todas las columnas del Excel tienen tag en el Word")
+
+    tags_faltantes = [t for t in tags_word if t not in columnas_excel]
+    if tags_faltantes:
+        st.error(f"❌ {len(tags_faltantes)} tag(s) del Word no encontrados en el Excel — revisa antes de procesar.")
+    else:
+        st.success("✅ Todos los tags del Word coinciden con el Excel")
+
+    st.markdown("---")
+
     total = len(df)
     st.info(f"📋 {total} fila(s) detectadas — se generarán {total} certificado(s)")
 
@@ -45,6 +102,7 @@ if excel_file and docx_template:
     os.makedirs(base_dir, exist_ok=True)
 
     template_path = os.path.join(base_dir, "plantilla.docx")
+    docx_template.seek(0)
     with open(template_path, "wb") as f:
         f.write(docx_template.read())
 
@@ -53,7 +111,6 @@ if excel_file and docx_template:
     # =========================================
     # PREVISUALIZACIÓN — primer certificado
     # =========================================
-    st.markdown("---")
     st.subheader("🔍 Previsualizar primer certificado")
 
     if st.button("📄 Generar previsualización"):
@@ -81,13 +138,7 @@ if excel_file and docx_template:
             if formato in ["PDF", "Ambos"]:
                 try:
                     subprocess.run(
-                        [
-                            "libreoffice",
-                            "--headless",
-                            "--convert-to", "pdf",
-                            "--outdir", preview_dir,
-                            preview_docx
-                        ],
+                        ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", preview_dir, preview_docx],
                         check=True,
                         timeout=30
                     )
@@ -131,7 +182,6 @@ if excel_file and docx_template:
     if st.button("⚙️ Procesar todos"):
 
         errores_proceso = []
-
         progress = st.progress(0)
         status = st.empty()
         contador = 0
@@ -183,13 +233,7 @@ if excel_file and docx_template:
 
             try:
                 subprocess.run(
-                    [
-                        "libreoffice",
-                        "--headless",
-                        "--convert-to", "pdf",
-                        "--outdir", pdf_dir,
-                        *docx_generados
-                    ],
+                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", pdf_dir, *docx_generados],
                     check=True,
                     timeout=300
                 )
