@@ -19,7 +19,6 @@ docx_template = st.file_uploader("📄 Word", type=["docx"])
 
 if excel_file and docx_template:
 
-    # ─── Validar extensiones ───
     if not excel_file.name.endswith(".xlsx"):
         st.error("❌ El Excel debe ser .xlsx — convierte el archivo en Excel: Archivo → Guardar como → .xlsx")
         st.stop()
@@ -28,7 +27,6 @@ if excel_file and docx_template:
         st.error("❌ El Word debe ser .docx — convierte el archivo en Word: Archivo → Guardar como → .docx")
         st.stop()
 
-    # ─── Leer Excel ───
     try:
         df = pd.read_excel(excel_file, dtype=str).fillna("")
         df.columns = df.columns.str.strip().str.lower()
@@ -36,7 +34,6 @@ if excel_file and docx_template:
         st.error(f"❌ No se pudo leer el Excel: {e}")
         st.stop()
 
-    # ─── Leer tags del Word ───
     try:
         doc_diag = Document(docx_template)
         patron = re.compile(r"{{(.*?)}}")
@@ -57,11 +54,10 @@ if excel_file and docx_template:
         st.error(f"❌ No se pudo leer la plantilla Word: {e}")
         st.stop()
 
+    TAGS_IGNORADOS = {"fecha"}
+
     columnas_excel = set(df.columns.tolist())
 
-    # =========================================
-    # DIAGNÓSTICO
-    # =========================================
     st.markdown("---")
     st.subheader("🔎 Diagnóstico de coincidencias")
 
@@ -70,21 +66,21 @@ if excel_file and docx_template:
     with col1:
         st.markdown("**🏷️ Tags del Word vs Excel**")
         filas_diag = []
-        for tag in sorted(tags_word):
+        for tag in sorted(tags_word - TAGS_IGNORADOS):
             estado = "✅ OK" if tag in columnas_excel else "❌ No encontrado en Excel"
             filas_diag.append({"Tag en Word": f"{{{{{tag}}}}}", "En Excel": estado})
         st.dataframe(pd.DataFrame(filas_diag), use_container_width=True, hide_index=True)
 
     with col2:
         st.markdown("**📋 Columnas del Excel sin tag en Word**")
-        sobrantes = sorted(columnas_excel - tags_word)
+        sobrantes = sorted(columnas_excel - (tags_word - TAGS_IGNORADOS))
         if sobrantes:
             filas_sob = [{"Columna Excel": c, "Estado": "⚠️ Sin tag en Word"} for c in sobrantes]
             st.dataframe(pd.DataFrame(filas_sob), use_container_width=True, hide_index=True)
         else:
             st.success("✅ Todas las columnas del Excel tienen tag en el Word")
 
-    tags_faltantes = [t for t in tags_word if t not in columnas_excel]
+    tags_faltantes = [t for t in (tags_word - TAGS_IGNORADOS) if t not in columnas_excel]
     if tags_faltantes:
         st.error(f"❌ {len(tags_faltantes)} tag(s) del Word no encontrados en el Excel — revisa antes de procesar.")
     else:
@@ -97,7 +93,6 @@ if excel_file and docx_template:
 
     formato = st.radio("Formato", ["Word (.docx)", "PDF", "Ambos"], horizontal=True)
 
-    # ─── Preparar directorio base ───
     base_dir = f"work_{uuid.uuid4().hex}"
     os.makedirs(base_dir, exist_ok=True)
 
@@ -108,9 +103,6 @@ if excel_file and docx_template:
 
     fecha = datetime.now().strftime("%d/%m/%Y")
 
-    # =========================================
-    # PREVISUALIZACIÓN — primer certificado
-    # =========================================
     st.subheader("🔍 Previsualizar primer certificado")
 
     if st.button("📄 Generar previsualización"):
@@ -174,9 +166,6 @@ if excel_file and docx_template:
         except Exception as e:
             st.error(f"❌ Error al generar la previsualización: {e}")
 
-    # =========================================
-    # PROCESAR TODOS
-    # =========================================
     st.markdown("---")
 
     if st.button("⚙️ Procesar todos"):
@@ -193,7 +182,6 @@ if excel_file and docx_template:
 
         docx_generados = []
 
-        # ─── DOCX ───
         for idx, fila in enumerate(df.to_dict("records")):
 
             fila = {k.lower(): v for k, v in fila.items()}
@@ -224,7 +212,6 @@ if excel_file and docx_template:
             progress.progress(contador / total)
             status.text(f"Generando DOCX {contador} de {total}...")
 
-        # ─── PDF ───
         pdf_generados = []
 
         if formato in ["PDF", "Ambos"] and docx_generados:
@@ -251,7 +238,6 @@ if excel_file and docx_template:
             except subprocess.CalledProcessError as e:
                 errores_proceso.append(f"❌ Error en conversión a PDF: {e}")
 
-        # ─── ZIP ───
         status.text("Empaquetando archivos... 📦")
 
         nombre_zip = f"certificados_{datetime.now().strftime('%d%m%Y_%H%M')}.zip"
@@ -276,7 +262,6 @@ if excel_file and docx_template:
         except Exception as e:
             st.error(f"❌ Error al crear el ZIP: {e}")
 
-        # ─── Errores del proceso ───
         if errores_proceso:
             st.markdown("---")
             st.subheader("⚠️ Advertencias del proceso")
