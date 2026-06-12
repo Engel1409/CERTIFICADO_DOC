@@ -2,14 +2,105 @@ import streamlit as st
 import pandas as pd
 import os
 import zipfile
-import subprocess
 import re
 import uuid
 import time
 import base64
+import requests
 from docxtpl import DocxTemplate
 from docx import Document
 from datetime import datetime
+
+# ─────────────────────────────────────────────
+# CONFIGURACIÓN iLovePDF
+# Para prueba local: pon las claves directo aquí
+# Para Streamlit Cloud: usa st.secrets (ver abajo)
+# ─────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────
+# Si estás en Streamlit Cloud, comenta las dos
+# líneas de arriba y descomenta estas:
+ILOVEPDF_PUBLIC_KEY = st.secrets["ILOVEPDF_PUBLIC_KEY"]
+ILOVEPDF_SECRET_KEY = st.secrets["ILOVEPDF_SECRET_KEY"]
+# ─────────────────────────────────────────────
+
+
+def convertir_a_pdf_ilovepdf(docx_path: str, output_dir: str) -> str | None:
+    """
+    Convierte un DOCX a PDF usando la API de iLovePDF.
+    Retorna la ruta del PDF generado, o None si hubo error.
+    """
+
+    try:
+        # 1. Autenticar y obtener token
+        auth_resp = requests.post(
+            "https://api.ilovepdf.com/v1/auth",
+            json={"public_key": ILOVEPDF_PUBLIC_KEY}
+        )
+        auth_resp.raise_for_status()
+        token = auth_resp.json()["token"]
+
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Iniciar tarea de conversión office → pdf
+        start_resp = requests.get(
+            "https://api.ilovepdf.com/v1/start/officepdf",
+            headers=headers
+        )
+        start_resp.raise_for_status()
+        start_data = start_resp.json()
+        server = start_data["server"]
+        task = start_data["task"]
+
+        # 3. Subir el archivo DOCX
+        with open(docx_path, "rb") as f:
+            upload_resp = requests.post(
+                f"https://{server}/v1/upload",
+                headers=headers,
+                data={"task": task},
+                files={"file": (os.path.basename(docx_path), f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+            )
+        upload_resp.raise_for_status()
+        server_filename = upload_resp.json()["server_filename"]
+
+        # 4. Procesar la conversión
+        process_resp = requests.post(
+            f"https://{server}/v1/process",
+            headers=headers,
+            json={
+                "task": task,
+                "tool": "officepdf",
+                "files": [{"server_filename": server_filename, "filename": os.path.basename(docx_path)}]
+            }
+        )
+        process_resp.raise_for_status()
+
+        # 5. Descargar el PDF resultante
+        download_resp = requests.get(
+            f"https://{server}/v1/download/{task}",
+            headers=headers
+        )
+        download_resp.raise_for_status()
+
+        # 6. Guardar el PDF en output_dir
+        pdf_filename = os.path.basename(docx_path).replace(".docx", ".pdf")
+        pdf_path = os.path.join(output_dir, pdf_filename)
+        with open(pdf_path, "wb") as f:
+            f.write(download_resp.content)
+
+        if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+            return pdf_path
+        else:
+            return None
+
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Error en iLovePDF API: {e}")
+
+
+# ─────────────────────────────────────────────
+# APP STREAMLIT
+# ─────────────────────────────────────────────
 
 st.set_page_config(page_title="Generador", layout="wide")
 st.title("📄 Generador de Certificados")
@@ -55,7 +146,6 @@ if excel_file and docx_template:
         st.stop()
 
     TAGS_IGNORADOS = {"fecha"}
-
     columnas_excel = set(df.columns.tolist())
 
     st.markdown("---")
@@ -128,30 +218,22 @@ if excel_file and docx_template:
             doc.save(preview_docx)
 
             if formato in ["PDF", "Ambos"]:
-                try:
-                    subprocess.run(
-                        ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", preview_dir, preview_docx],
-                        check=True,
-                        timeout=30
-                    )
-                    time.sleep(1)
+                with st.spinner("Convirtiendo a PDF con iLovePDF..."):
+                    try:
+                        preview_pdf = convertir_a_pdf_ilovepdf(preview_docx, preview_dir)
 
-                    preview_pdf = preview_docx.replace(".docx", ".pdf")
+                        if preview_pdf and os.path.exists(preview_pdf):
+                            with open(preview_pdf, "rb") as f:
+                                st.download_button(
+                                    "📥 Descargar previsualización PDF",
+                                    f.read(),
+                                    file_name=f"PREVIEW_{nombre}.pdf"
+                                )
+                        else:
+                            st.error("❌ No se generó el PDF de previsualización.")
 
-                    if os.path.exists(preview_pdf) and os.path.getsize(preview_pdf) > 0:
-                        with open(preview_pdf, "rb") as f:
-                            st.download_button(
-                                "📥 Descargar previsualización PDF",
-                                f.read(),
-                                file_name=f"PREVIEW_{nombre}.pdf"
-                            )
-                    else:
-                        st.error("❌ No se generó el PDF de previsualización.")
-
-                except subprocess.TimeoutExpired:
-                    st.error("❌ LibreOffice tardó demasiado al convertir la previsualización.")
-                except subprocess.CalledProcessError as e:
-                    st.error(f"❌ Error al convertir a PDF: {e}")
+                    except RuntimeError as e:
+                        st.error(f"❌ Error al convertir a PDF: {e}")
 
             if formato in ["Word (.docx)", "Ambos"]:
                 with open(preview_docx, "rb") as f:
@@ -182,6 +264,7 @@ if excel_file and docx_template:
 
         docx_generados = []
 
+        # Paso 1: generar todos los DOCX
         for idx, fila in enumerate(df.to_dict("records")):
 
             fila = {k.lower(): v for k, v in fila.items()}
@@ -209,34 +292,28 @@ if excel_file and docx_template:
                 errores_proceso.append(f"⚠️ Fila {idx + 1} — error al generar DOCX: {e}")
 
             contador += 1
-            progress.progress(contador / total)
+            progress.progress(contador / (total * 2 if formato in ["PDF", "Ambos"] else total))
             status.text(f"Generando DOCX {contador} de {total}...")
 
+        # Paso 2: convertir a PDF uno por uno con iLovePDF
         pdf_generados = []
 
         if formato in ["PDF", "Ambos"] and docx_generados:
 
-            status.text("Convirtiendo a PDF... ⏳")
+            for i, docx_path in enumerate(docx_generados):
+                status.text(f"Convirtiendo a PDF {i + 1} de {len(docx_generados)}... ⏳")
 
-            try:
-                subprocess.run(
-                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", pdf_dir, *docx_generados],
-                    check=True,
-                    timeout=300
-                )
-                time.sleep(2)
-
-                for f in docx_generados:
-                    pdf = os.path.join(pdf_dir, os.path.basename(f).replace(".docx", ".pdf"))
-                    if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
-                        pdf_generados.append(pdf)
+                try:
+                    pdf_path = convertir_a_pdf_ilovepdf(docx_path, pdf_dir)
+                    if pdf_path:
+                        pdf_generados.append(pdf_path)
                     else:
-                        errores_proceso.append(f"⚠️ No se generó PDF para: {os.path.basename(f)}")
+                        errores_proceso.append(f"⚠️ No se generó PDF para: {os.path.basename(docx_path)}")
 
-            except subprocess.TimeoutExpired:
-                errores_proceso.append("❌ LibreOffice tardó demasiado en la conversión a PDF.")
-            except subprocess.CalledProcessError as e:
-                errores_proceso.append(f"❌ Error en conversión a PDF: {e}")
+                except RuntimeError as e:
+                    errores_proceso.append(f"⚠️ Error PDF {os.path.basename(docx_path)}: {e}")
+
+                progress.progress((total + i + 1) / (total * 2))
 
         status.text("Empaquetando archivos... 📦")
 
