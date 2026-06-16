@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import os
@@ -13,24 +14,21 @@ from datetime import datetime
 
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN iLovePDF
-# Para prueba local: pon las claves directo aquí
-# Para Streamlit Cloud: usa st.secrets (ver abajo)
+# Para Streamlit Cloud: usa st.secrets
 # ─────────────────────────────────────────────
-
-
-# ─────────────────────────────────────────────
-# Si estás en Streamlit Cloud, comenta las dos
-# líneas de arriba y descomenta estas:
 ILOVEPDF_PUBLIC_KEY = st.secrets["ILOVEPDF_PUBLIC_KEY"]
 ILOVEPDF_SECRET_KEY = st.secrets["ILOVEPDF_SECRET_KEY"]
-# ─────────────────────────────────────────────
 
 
-def convertir_a_pdf_ilovepdf(docx_path: str, output_dir: str) -> str | None:
+def convertir_multiples_docx_a_pdf_ilovepdf(docx_paths: list, output_dir: str) -> list:
     """
-    Convierte un DOCX a PDF usando la API de iLovePDF.
-    Retorna la ruta del PDF generado, o None si hubo error.
+    Convierte una LISTA de archivos DOCX a PDF en una sola petición (Lote).
+    Retorna una lista con las rutas de los PDFs generados con éxito.
     """
+    if not docx_paths:
+        return []
+
+    pdf_generados = []
 
     try:
         # 1. Autenticar y obtener token
@@ -40,10 +38,9 @@ def convertir_a_pdf_ilovepdf(docx_path: str, output_dir: str) -> str | None:
         )
         auth_resp.raise_for_status()
         token = auth_resp.json()["token"]
-
         headers = {"Authorization": f"Bearer {token}"}
 
-        # 2. Iniciar tarea de conversión office → pdf
+        # 2. Iniciar una ÚNICA tarea para todo este lote
         start_resp = requests.get(
             "https://api.ilovepdf.com/v1/start/officepdf",
             headers=headers
@@ -53,49 +50,74 @@ def convertir_a_pdf_ilovepdf(docx_path: str, output_dir: str) -> str | None:
         server = start_data["server"]
         task = start_data["task"]
 
-        # 3. Subir el archivo DOCX
-        with open(docx_path, "rb") as f:
-            upload_resp = requests.post(
-                f"https://{server}/v1/upload",
-                headers=headers,
-                data={"task": task},
-                files={"file": (os.path.basename(docx_path), f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
-            )
-        upload_resp.raise_for_status()
-        server_filename = upload_resp.json()["server_filename"]
+        archivos_procesar = []
 
-        # 4. Procesar la conversión
+        # 3. Subir TODOS los archivos del lote actual a la misma tarea
+        for docx_path in docx_paths:
+            with open(docx_path, "rb") as f:
+                upload_resp = requests.post(
+                    f"https://{server}/v1/upload",
+                    headers=headers,
+                    data={"task": task},
+                    files={"file": (os.path.basename(docx_path), f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+                )
+            upload_resp.raise_for_status()
+            server_filename = upload_resp.json()["server_filename"]
+            
+            archivos_procesar.append({
+                "server_filename": server_filename, 
+                "filename": os.path.basename(docx_path)
+            })
+
+        # 4. Procesar la conversión de todo el lote junto
         process_resp = requests.post(
             f"https://{server}/v1/process",
             headers=headers,
             json={
                 "task": task,
                 "tool": "officepdf",
-                "files": [{"server_filename": server_filename, "filename": os.path.basename(docx_path)}]
+                "files": archivos_procesar
             }
         )
         process_resp.raise_for_status()
 
-        # 5. Descargar el PDF resultante
+        # 5. Descargar el resultado (iLovePDF devuelve un .zip con los PDFs del lote)
         download_resp = requests.get(
             f"https://{server}/v1/download/{task}",
             headers=headers
         )
         download_resp.raise_for_status()
 
-        # 6. Guardar el PDF en output_dir
-        pdf_filename = os.path.basename(docx_path).replace(".docx", ".pdf")
-        pdf_path = os.path.join(output_dir, pdf_filename)
-        with open(pdf_path, "wb") as f:
+        # 6. Descomprimir los PDFs en la carpeta de destino
+        zip_temporal = os.path.join(output_dir, f"resultado_{uuid.uuid4().hex}.zip")
+        with open(zip_temporal, "wb") as f:
             f.write(download_resp.content)
 
-        if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
-            return pdf_path
-        else:
-            return None
+        with zipfile.ZipFile(zip_temporal, "r") as z:
+            z.extractall(output_dir)
+            for nombre_archivo in z.namelist():
+                pdf_path = os.path.join(output_dir, nombre_archivo)
+                if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+                    pdf_generados.append(pdf_path)
+
+        if os.path.exists(zip_temporal):
+            os.remove(zip_temporal)
+
+        return pdf_generados
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Error en iLovePDF API: {e}")
+        raise RuntimeError(f"Error en el lote de iLovePDF API: {e}")
+
+
+def convertir_individual_para_preview(docx_path: str, output_dir: str) -> str | None:
+    """
+    Función auxiliar rápida para convertir un solo archivo (usado solo en la Previsualización).
+    """
+    try:
+        lista_resultado = convertir_multiples_docx_a_pdf_ilovepdf([docx_path], output_dir)
+        return lista_resultado[0] if lista_resultado else None
+    except Exception as e:
+        raise RuntimeError(str(e))
 
 
 # ─────────────────────────────────────────────
@@ -220,7 +242,7 @@ if excel_file and docx_template:
             if formato in ["PDF", "Ambos"]:
                 with st.spinner("Convirtiendo a PDF con iLovePDF..."):
                     try:
-                        preview_pdf = convertir_a_pdf_ilovepdf(preview_docx, preview_dir)
+                        preview_pdf = convertir_individual_para_preview(preview_docx, preview_dir)
 
                         if preview_pdf and os.path.exists(preview_pdf):
                             with open(preview_pdf, "rb") as f:
@@ -264,7 +286,7 @@ if excel_file and docx_template:
 
         docx_generados = []
 
-        # Paso 1: generar todos los DOCX
+        # Paso 1: generar todos los DOCX localmente (Sin tocar API)
         for idx, fila in enumerate(df.to_dict("records")):
 
             fila = {k.lower(): v for k, v in fila.items()}
@@ -292,28 +314,30 @@ if excel_file and docx_template:
                 errores_proceso.append(f"⚠️ Fila {idx + 1} — error al generar DOCX: {e}")
 
             contador += 1
+            # Ajuste de barra de progreso proporcional
             progress.progress(contador / (total * 2 if formato in ["PDF", "Ambos"] else total))
             status.text(f"Generando DOCX {contador} de {total}...")
 
-        # Paso 2: convertir a PDF uno por uno con iLovePDF
+        # Paso 2: convertir a PDF optimizado en mini-lotes de máximo 10 archivos
         pdf_generados = []
 
         if formato in ["PDF", "Ambos"] and docx_generados:
+            limite_lote = 10
+            # Divide la lista completa en una lista de sublistas (de 10 en 10)
+            mini_lotes = [docx_generados[i:i + limite_lote] for i in range(0, len(docx_generados), limite_lote)]
+            total_lotes = len(mini_lotes)
 
-            for i, docx_path in enumerate(docx_generados):
-                status.text(f"Convirtiendo a PDF {i + 1} de {len(docx_generados)}... ⏳")
-
+            for index, lote in enumerate(mini_lotes):
+                status.text(f"Convirtiendo lote de PDFs {index + 1} de {total_lotes}... ⏳")
                 try:
-                    pdf_path = convertir_a_pdf_ilovepdf(docx_path, pdf_dir)
-                    if pdf_path:
-                        pdf_generados.append(pdf_path)
-                    else:
-                        errores_proceso.append(f"⚠️ No se generó PDF para: {os.path.basename(docx_path)}")
-
+                    # Se envía el grupo completo a la API
+                    pdfs_del_lote = convertir_multiples_docx_a_pdf_ilovepdf(lote, pdf_dir)
+                    pdf_generados.extend(pdfs_del_lote)
                 except RuntimeError as e:
-                    errores_proceso.append(f"⚠️ Error PDF {os.path.basename(docx_path)}: {e}")
+                    errores_proceso.append(f"❌ Error en el lote {index + 1}: {e}")
 
-                progress.progress((total + i + 1) / (total * 2))
+                # Avanza la barra dinámicamente en la segunda mitad del proceso
+                progress.progress(0.5 + (0.4 * ((index + 1) / total_lotes)))
 
         status.text("Empaquetando archivos... 📦")
 
